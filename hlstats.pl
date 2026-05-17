@@ -3106,7 +3106,7 @@ sub handleData
                     my %status_players = $g_servers{$server}->rcon_getplayers();
                     if ( defined $status_players{"host"}->{"name"} || $g_servers{$server}->{rcon_obj}->{rcon_err} >= 3 ) {
                         # remove idling players
-                        printEvent("RCON", "STATUS: Updating players list...",3, $server);
+                        printEvent("RCON", "status - Updating players list...",3, $server);
                         keys %players_temp;
                         while (my ($pl, $player) = each %players_temp) {
                             my $userid    = $player->{userid};
@@ -3130,7 +3130,6 @@ sub handleData
                 } elsif ($g_servers{$server}->{map} eq "") {
                     $g_servers{$server}->get_map();
                 }
-
             # Server is offline
             } elsif ($g_servers{$server}->{rcon_obj}->{rcon_err} >= 3 && $g_servers{$server}->{last_event}+599 < $ev_daemontime) {
                 ::printEvent("GAME", "Offline: Now destroying socket and deleting game object for $g_servers{$server}->{game}",1, $server);
@@ -3138,11 +3137,13 @@ sub handleData
                 $socket->destroy() if $socket;
                 delete $g_servers{$server};
                 return 0;
-            }
+            # Empty server 
+            } else { $g_servers{$server}->get_map() if $g_servers{$server}->{map} eq ""; }
+
             $g_servers{$server}->{next_timeout}=$ev_daemontime+30+rand(30);
         }
 
-        if ($ev_daemontime > $g_servers{$server}->{next_flush} && $g_servers{$server}->{needsupdate} )
+        if ($ev_daemontime > $g_servers{$server}->{next_flush} && $g_servers{$server}->{needsupdate})
         {
             $g_servers{$server}->flushDB();
             $g_servers{$server}->{next_flush} = $ev_daemontime + 20;

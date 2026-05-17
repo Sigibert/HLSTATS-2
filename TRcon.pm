@@ -588,6 +588,7 @@ sub getServerData
   my $server_object = $self->{server_object};
   my $game = $server_object->{play_game};
 
+  ::printEvent("RCON", "status",3,"$server_object->{address}:$server_object->{port}");
   my $status = $self->execute("status");
   return ("", "", 0, 0) unless $status;
 
@@ -623,7 +624,8 @@ sub getServerData
     }
   }
   if ($game == L4D()) {
-      $difficulty = $self->getDifficulty();
+        ::printEvent("RCON", "z_difficulty",3,"$server_object->{address}:$server_object->{port}");
+        $difficulty = $self->getDifficulty();
   }
 
   return ($servhostname, $map, $max_players, $difficulty);
@@ -633,6 +635,7 @@ sub getServerData
 sub getVisiblePlayers
 {
   my ($self) = @_;
+  ::printEvent("RCON", "sv_visiblemaxplayers",3,"$self->{server_object}->{address}:$self->{server_object}->{port}");
   my $status = $self->execute("sv_visiblemaxplayers") // '';
   
   my @lines = split(/[\r\n]+/, $status);

@@ -611,7 +611,7 @@ sub get_map
             }
 
             if ($update > 0) {
-                ::printEvent("RCON", "Got map ".$self->{map}." successfully",3,"$self->{address}:$self->{port}");
+                ::printEvent("RCON", "Got new map ".$self->{map}." successfully",3,"$self->{address}:$self->{port}");
                 $self->updateDB();
             }
 

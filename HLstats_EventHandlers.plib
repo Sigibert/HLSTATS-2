@@ -899,7 +899,8 @@ sub doEvent_ChangeName
 {
     my ($playerId, $playerUniqueId, $newname) = @_;
     $newname =~ s/[\x00-\x1f\x7f]//g;
-    $newname = substr($newname, 0, 252);  # byte cap: varchar(64) utf8mb4 = 256 bytes max; Steam names <= 32 chars = 128 bytes max
+    $newname = Encode::decode('UTF-8', $newname, Encode::FB_DEFAULT) unless Encode::is_utf8($newname);
+    $newname = substr($newname, 0, 63);   # varchar(64) in characters
 
     my $desc="";
     my $player = lookupPlayer($s_addr, $playerId, $playerUniqueId);
@@ -2088,6 +2089,7 @@ sub doEvent_Chat
         $player->updateDB();
         my $p_userid = $g_servers{$s_addr}->format_userid($player->{userid});
         $message =~ s/^!//;
+        $message = Encode::decode('UTF-8', $message, Encode::FB_DEFAULT) unless Encode::is_utf8($message);
         $message = substr($message, 0, 128);
         my $messagelen = length($message);
         

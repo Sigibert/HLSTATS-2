@@ -316,7 +316,7 @@ sub insertPlayer
             $hideranking,
             $playerid,
         );
-       ::exec_cache($sql,@bind);
+       ::exec_cache("player_insert_existing", $sql, @bind);
        return $playerid;
     }
 
@@ -343,7 +343,7 @@ sub insertPlayer
     };
     my @vals = ($self->{name}, $self->{clan}, $::g_servers{$srv_addr}->{game}, $self->{display_events}, $hideranking);
     my $res = ::exec_cache("player_insert", $query, @vals);
-    $self->{playerid} = $res->last_insert_id(undef, undef, undef, undef);
+    $self->{playerid} = $::dbh->last_insert_id(undef, undef, undef, undef);
 
 }
 
