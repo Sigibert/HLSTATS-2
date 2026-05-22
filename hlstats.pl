@@ -769,98 +769,68 @@ sub getServerMod
 
     my ($gamename, $gamedir, $hostname, $numplayers, $maxplayers, $mapname) = queryServer($address, $port, @query);
 
-    if ($gamename =~ /^Counter-Strike$/i) {
-        $playgame = "cstrike";
-    } elsif ($gamename =~ /^Counter-Strike/i) {
-        $playgame = "css";
-    } elsif ($gamename =~ /^Team Fortress C/i) {
-        $playgame = "tfc";
-    } elsif ($gamename =~ /^Team Fortress/i) {
-        $playgame = "tf";
-    } elsif ($gamename =~ /^Day of Defeat$/i) {
-        $playgame = "dod";
-    } elsif ($gamename =~ /^Day of Defeat/i) {
-        $playgame = "dods";
-    } elsif ($gamename =~ /^Insurgency/i) {
-        $playgame = "insmod";
-    } elsif ($gamename =~ /^Neotokyo/i) {
-        $playgame = "nts";
-    } elsif ($gamename =~ /^Fortress Forever/i) {
-        $playgame = "ff";
-    } elsif ($gamename =~ /^Age of Chivalry/i) {
-        $playgame = "aoc";
-    } elsif ($gamename =~ /^Dystopia/i) {
-        $playgame = "dystopia";
-    } elsif ($gamename =~ /^Stargate/i) {
-        $playgame = "sgtls";
-    } elsif ($gamename =~ /^Battle Grounds/i) {
-        $playgame = "bg2";
-    } elsif ($gamename =~ /^Hidden/i) {
-        $playgame = "hidden";
-    } elsif ($gamename =~ /^L4D /i) {
-        $playgame = "l4d";
-    } elsif ($gamename =~ /^Left 4 Dead 2/i) {
-        $playgame = "l4d2";
-    } elsif ($gamename =~ /^ZPS /i) {
-        $playgame = "zps";
-    } elsif ($gamename =~ /^NS /i) {
-        $playgame = "ns";
-    } elsif ($gamename =~ /^pvkii/i) {
-        $playgame = "pvkii";
-    } elsif ($gamename =~ /^CSPromod/i) {
-        $playgame = "csp";
-    } elsif ($gamename eq "Half-Life") {
-        $playgame = "valve";
-    } elsif ($gamename eq "Nuclear Dawn") {
-        $playgame = "nucleardawn";
-    
-    # We didn't found our mod, trying secondary way. This is required for some games such as FOF and GES and is a fallback for others
-    } elsif ($gamedir =~ /^ges/i) {
-        $playgame = "ges";
-    } elsif ($gamedir =~ /^fistful_of_frags/i || $gamedir =~ /^fof/i) {
-        $playgame = "fof";
-    } elsif ($gamedir =~ /^hl2mp/i) {
-        $playgame = "hl2mp";
-    } elsif ($gamedir =~ /^tfc/i) {
-        $playgame = "tfc";
-    } elsif ($gamedir =~ /^tf/i) {
-        $playgame = "tf";
-    } elsif ($gamedir =~ /^ins/i) {
-        $playgame = "insmod";
-    } elsif ($gamedir =~ /^neotokyo/i) {
-        $playgame = "nts";
-    } elsif ($gamedir =~ /^fortressforever/i) {
-        $playgame = "ff";
-    } elsif ($gamedir =~ /^ageofchivalry/i) {
-        $playgame = "aoc";
-    } elsif ($gamedir =~ /^dystopia/i) {
-        $playgame = "dystopia";
-    } elsif ($gamedir =~ /^sgtls/i) {
-        $playgame = "sgtls";
-    } elsif ($gamedir =~ /^hidden/i) {
-        $playgame = "hidden";
-    } elsif ($gamedir =~ /^left4dead/i) {
-        $playgame = "l4d";
-    } elsif ($gamedir =~ /^left4dead2/i) {
-        $playgame = "l4d2";
-    } elsif ($gamedir =~ /^zps/i) {
-        $playgame = "zps";
-    } elsif ($gamedir =~ /^ns/i) {
-        $playgame = "ns";
-    } elsif ($gamedir =~ /^bg/i) {
-        $playgame = "bg2";
-    } elsif ($gamedir =~ /^pvkii/i) {
-        $playgame = "pvkii";
-    } elsif ($gamedir =~ /^cspromod/i) {
-        $playgame = "csp";
-    } elsif ($gamedir =~ /^valve$/i) {
-        $playgame = "valve";
-    } elsif ($gamedir =~ /^nucleardawn$/i) {
-        $playgame = "nucleardawn";
-    } elsif ($gamedir =~ /^dinodday$/i) {
-        $playgame = "dinodday";
-    } else {
-        # We didn't found our mod, giving up.
+    # Order matters: more-specific patterns must precede their prefixes.
+    my @gamename_map = (
+        [ qr/^Counter-Strike$/i,   'cstrike'     ],
+        [ qr/^Counter-Strike/i,    'css'         ],
+        [ qr/^Team Fortress C/i,   'tfc'         ],
+        [ qr/^Team Fortress/i,     'tf'          ],
+        [ qr/^Day of Defeat$/i,    'dod'         ],
+        [ qr/^Day of Defeat/i,     'dods'        ],
+        [ qr/^Insurgency/i,        'insmod'      ],
+        [ qr/^Neotokyo/i,          'nts'         ],
+        [ qr/^Fortress Forever/i,  'ff'          ],
+        [ qr/^Age of Chivalry/i,   'aoc'         ],
+        [ qr/^Dystopia/i,          'dystopia'    ],
+        [ qr/^Stargate/i,          'sgtls'       ],
+        [ qr/^Battle Grounds/i,    'bg2'         ],
+        [ qr/^Hidden/i,            'hidden'      ],
+        [ qr/^L4D /i,              'l4d'         ],
+        [ qr/^Left 4 Dead 2/i,     'l4d'         ],
+        [ qr/^ZPS /i,              'zps'         ],
+        [ qr/^NS /i,               'ns'          ],
+        [ qr/^pvkii/i,             'pvkii'       ],
+        [ qr/^CSPromod/i,          'csp'         ],
+        [ qr/^Half-Life$/,         'valve'       ],
+        [ qr/^Nuclear Dawn$/,      'nucleardawn' ],
+    );
+
+    # Fallback by gamedir — required for FOF, GES, and others that report generic gamenames.
+    # left4dead2 must precede left4dead (its directory name is a prefix of l4d2's).
+    my @gamedir_map = (
+        [ qr/^ges/i,               'ges'         ],
+        [ qr/^(?:fistful_of_frags|fof)/i, 'fof'  ],
+        [ qr/^hl2mp/i,             'hl2mp'       ],
+        [ qr/^tfc/i,               'tfc'         ],
+        [ qr/^tf/i,                'tf'          ],
+        [ qr/^ins/i,               'insmod'      ],
+        [ qr/^neotokyo/i,          'nts'         ],
+        [ qr/^fortressforever/i,   'ff'          ],
+        [ qr/^ageofchivalry/i,     'aoc'         ],
+        [ qr/^dystopia/i,          'dystopia'    ],
+        [ qr/^sgtls/i,             'sgtls'       ],
+        [ qr/^hidden/i,            'hidden'      ],
+        [ qr/^left4dead2/i,        'l4d'         ],
+        [ qr/^left4dead/i,         'l4d'         ],
+        [ qr/^zps/i,               'zps'         ],
+        [ qr/^ns/i,                'ns'          ],
+        [ qr/^bg/i,                'bg2'         ],
+        [ qr/^pvkii/i,             'pvkii'       ],
+        [ qr/^cspromod/i,          'csp'         ],
+        [ qr/^valve$/i,            'valve'       ],
+        [ qr/^nucleardawn$/i,      'nucleardawn' ],
+        [ qr/^dinodday$/i,         'dinodday'    ],
+    );
+
+    for my $entry (@gamename_map) {
+        if ($gamename =~ $entry->[0]) { $playgame = $entry->[1]; last; }
+    }
+    if (!$playgame) {
+        for my $entry (@gamedir_map) {
+            if ($gamedir =~ $entry->[0]) { $playgame = $entry->[1]; last; }
+        }
+    }
+    if (!$playgame) {
         printEvent("MOD", "Failed to get Server Mod",3);
         return 0;
     }
@@ -1407,8 +1377,10 @@ sub readDatabaseConfig()
     # hlxce: read the global settings from the database!
     my $gsettings = query_now("SELECT keyname,value FROM hlstats_Options WHERE opttype <= 1");
     while ( my($p,$v) = $gsettings->fetchrow_array) {
-        my $tmp = "\$".$directives_mysql{$p}." = '$v'";
-        eval $tmp;
+        my $varname = $directives_mysql{$p};
+        next unless defined $varname;
+        no strict 'refs';
+        $$varname = $v;
     }
     $gsettings->finish;
     # CRONJOB
