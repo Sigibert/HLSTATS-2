@@ -102,17 +102,21 @@ sub DB_connect {
                     PrintError           => 1,
                     AutoCommit           => 1,
                     ($db_driver eq 'mysql' ? (
-                        mysql_enable_utf8mb4      => 1,
-                        mysql_auto_reconnect      => 1,
+                        mysql_enable_utf8mb4   => 1,
+                        mysql_auto_reconnect   => 1,
                     ) : (
-                        mariadb_enable_utf8mb4    => 1,
-                        mariadb_auto_reconnect    => 1,
+                        mariadb_auto_reconnect => 1,
                     ))
                 }
             );
         };
 
         if ($dbh) {
+            # Set charset at C-connector level so the driver does not
+            # re-encode byte strings as Latin-1 before sending to MariaDB.
+            # func('set_charset') calls mysql_set_character_set() directly;
+            # eval guard handles older DBD versions that may not expose it.
+            eval { $dbh->func('utf8mb4', 'set_charset') };
             $dbh->do("SET NAMES utf8mb4 COLLATE utf8mb4_general_ci");
             printEvent("MYSQL", "Connected to '$db_name' on '$db_host' as '$db_user' with $db_driver", 1);
             return 1;
