@@ -102,9 +102,12 @@ sub DB_connect {
                     PrintError           => 1,
                     AutoCommit           => 1,
                     ($db_driver eq 'mysql' ? (
-                        mysql_enable_utf8mb4   => 1,
-                        mysql_auto_reconnect   => 1,
-                    ) : ( mariadb_auto_reconnect => 1,))
+                        mysql_enable_utf8mb4      => 1,
+                        mysql_auto_reconnect      => 1,
+                    ) : (
+                        mariadb_enable_utf8mb4    => 1,
+                        mariadb_auto_reconnect    => 1,
+                    ))
                 }
             );
         };
