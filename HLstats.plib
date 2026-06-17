@@ -130,9 +130,16 @@ sub DB_connect {
 }
 
 
+sub _decode_bind {
+    for my $val (@_) {
+        utf8::decode($val) if defined $val && !utf8::is_utf8($val);
+    }
+}
+
 sub query_now {
     my ($sql, @bind) = @_;
     DB_connect();
+    _decode_bind(@bind);
 
     my $sth = $dbh->prepare($sql);
     unless ($sth) {
@@ -146,6 +153,7 @@ sub query_now {
 sub exec_now {
     my ($sql, @bind) = @_;
     DB_connect();
+    _decode_bind(@bind);
     $dbh->do($sql, undef, @bind);
 }
 
@@ -153,6 +161,7 @@ sub exec_now {
 sub exec_cache {
     my ($query_id, $sql, @bind) = @_;
     DB_connect();
+    _decode_bind(@bind);
 
     unless ($stmt_cache{$query_id}) {
         $stmt_cache{$query_id} = $dbh->prepare($sql);
