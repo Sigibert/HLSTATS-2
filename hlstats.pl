@@ -39,6 +39,7 @@ use Time::Local;
 use DBI;
 use Digest::MD5;
 use bytes;
+use Encode qw(decode is_utf8);
 use Mojo::Server::Daemon;
 use Mojo::IOLoop::Subprocess;
 use IO::Socket::INET;
@@ -584,6 +585,7 @@ sub updatePlayerProfile
 # 0 if the player is not in a clan.
 #
 sub getClanId {
+    no bytes;
     my ($name) = @_;
 
     my $sql_tags = q{
@@ -611,6 +613,9 @@ sub getClanId {
     }
 
     return 0 unless defined $clanTag && length $clanTag;
+
+    $clanTag  = decode('UTF-8', $clanTag,  Encode::FB_DEFAULT) unless is_utf8($clanTag);
+    $clanName = decode('UTF-8', $clanName, Encode::FB_DEFAULT) unless is_utf8($clanName);
 
     my $sql_check = q{
         SELECT clanId FROM hlstats_Clans WHERE tag=? AND game=? LIMIT 1

@@ -110,7 +110,7 @@ sub DB_connect {
         };
 
         if ($dbh) {
-            $dbh->do("SET NAMES utf8mb4 COLLATE utf8mb4_general_ci");
+            $dbh->do("SET NAMES utf8mb4 COLLATE utf8mb4_general_ci") unless $db_driver eq 'mariadb';
             printEvent("MYSQL", "Connected to '$db_name' on '$db_host' as '$db_user' with $db_driver", 1);
             return 1;
         }
