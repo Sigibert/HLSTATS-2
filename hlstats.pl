@@ -631,12 +631,11 @@ sub getClanId {
             INSERT INTO hlstats_Clans (tag, name, game)
             VALUES (?, ?, ?)
             ON DUPLICATE KEY UPDATE
-                name = VALUES(name),
                 clanId = LAST_INSERT_ID(clanId)
         };
-        exec_now($sql_ins, $clanTag, $clanName, $g_servers{$s_addr}->{game});
+        exec_now($sql_ins, $clanTag, $clanTag, $g_servers{$s_addr}->{game});
         my $clanid = $dbh->last_insert_id(undef, undef, undef, undef);
-        printEvent("MYSQL", qq{Created/fetched clan "$clanName" <C:$clanid> with tag "$clanTag"}, 4);
+        printEvent("MYSQL", qq{Created/fetched clan <C:$clanid> with tag "$clanTag"}, 4);
         return $clanid + 0;
     }
 }
