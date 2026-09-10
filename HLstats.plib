@@ -61,6 +61,14 @@ my %stmt_cache = ();
 sub quote_sql {
     my ($val) = @_;
     return "NULL" unless defined $val;
+    # Event values never reach the driver as bind parameters: recordEvent()
+    # quotes them through here and flushEventTable() interpolates the result
+    # into one multi-row INSERT. Under "use bytes" they arrive as byte strings
+    # holding UTF-8, and DBD::MariaDB then encodes each byte as a character,
+    # so "ae" lands as C3 83 C2 A4 instead of C3 A4. Measured on a live 10.11
+    # connection: both the interpolated and the bind path double-encode a byte
+    # string, and both are correct once the value is decoded first.
+    utf8::decode($val) unless utf8::is_utf8($val);
     $val =~ s/\\/\\\\/g;   # replace \ with \\
     $val =~ s/'/\\'/g;     # replace ' with \'
     $val =~ s/\\/\\\\/g;   # replace \ with \\
@@ -110,17 +118,14 @@ sub DB_connect {
         };
 
         if ($dbh) {
-            # 2.5.10 made the SET NAMES below conditional, but the MariaDB path
-            # never gained a charset anywhere else: the DSN carries none, the only
-            # driver attribute is mariadb_auto_reconnect, and DBD::MariaDB reads
-            # /etc/mysql/*.cnf only when asked to via mariadb_read_default_file.
-            # The connection therefore runs on the driver default, and UTF-8 byte
-            # strings get re-encoded on their way into a utf8mb4 column -- "ae"
-            # ends up stored as C3 83 C2 A4 instead of C3 A4.
-            # func('set_charset') calls mysql_set_character_set() at the C
-            # connector level, which is what SET NAMES used to cover here. The
-            # eval guards DBD versions that do not expose the function.
-            eval { $dbh->func('utf8mb4', 'set_charset') } if $db_driver eq 'mariadb';
+            # Nothing to add for the mariadb driver: measured on DBD::MariaDB
+            # 1.24, a fresh connection already reports utf8mb4 for client,
+            # connection and results, so skipping SET NAMES here costs nothing.
+            # (func('utf8mb4', 'set_charset') does not exist in this driver --
+            # it dies with "Can't locate DBI object method". Don't add it.)
+            # The encoding problem is not the connection charset but byte
+            # strings reaching the driver undecoded; see quote_sql() and
+            # _decode_bind() below.
             $dbh->do("SET NAMES utf8mb4 COLLATE utf8mb4_general_ci") unless $db_driver eq 'mariadb';
             printEvent("MYSQL", "Connected to '$db_name' on '$db_host' as '$db_user' with $db_driver", 1);
             return 1;
@@ -137,9 +142,9 @@ sub DB_connect {
 # hlstats.pl runs under "use bytes", so values reaching the query helpers are
 # byte strings holding UTF-8. Handing those to DBI encodes them a second time.
 # Decoding every bind value once, centrally, covers all call sites at once --
-# 2.5.10 fixed only getClanId() this way, which is why clan tags are stored
-# correctly while chat messages are not. Modifying @_ writes through to the
-# caller's values by design; that aliasing is the point.
+# 2.5.10 fixed only getClanId() this way. Note this covers the bind path only;
+# events bypass it entirely and are handled in quote_sql(). Modifying @_ writes
+# through to the caller's values by design; that aliasing is the point.
 sub _decode_bind {
     for my $val (@_) {
         utf8::decode($val) if defined $val && !utf8::is_utf8($val);
