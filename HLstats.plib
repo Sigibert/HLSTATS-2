@@ -63,11 +63,13 @@ sub quote_sql {
     return "NULL" unless defined $val;
     # Event values never reach the driver as bind parameters: recordEvent()
     # quotes them through here and flushEventTable() interpolates the result
-    # into one multi-row INSERT. Under "use bytes" they arrive as byte strings
-    # holding UTF-8, and DBD::MariaDB then encodes each byte as a character,
-    # so "ae" lands as C3 83 C2 A4 instead of C3 A4. Measured on a live 10.11
-    # connection: both the interpolated and the bind path double-encode a byte
-    # string, and both are correct once the value is decoded first.
+    # into one multi-row INSERT.
+    #
+    # This decode is NOT what fixes the encoding -- both callers sit in
+    # hlstats.pl under "use bytes", where the join flattens the decoded value
+    # straight back to raw bytes. It stays because escaping and length work on
+    # characters here rather than bytes. The decode that survives is
+    # _decode_sql() in the query helpers, applied once the assembly is done.
     utf8::decode($val) unless utf8::is_utf8($val);
     $val =~ s/\\/\\\\/g;   # replace \ with \\
     $val =~ s/'/\\'/g;     # replace ' with \'
@@ -141,19 +143,29 @@ sub DB_connect {
 
 # hlstats.pl runs under "use bytes", so values reaching the query helpers are
 # byte strings holding UTF-8. Handing those to DBI encodes them a second time.
-# Decoding every bind value once, centrally, covers all call sites at once --
-# 2.5.10 fixed only getClanId() this way. Note this covers the bind path only;
-# events bypass it entirely and are handled in quote_sql(). Modifying @_ writes
-# through to the caller's values by design; that aliasing is the point.
 sub _decode_bind {
     for my $val (@_) {
         utf8::decode($val) if defined $val && !utf8::is_utf8($val);
     }
 }
 
+# The SQL text itself needs the same treatment, and this is the only place that
+# actually holds: flushEventTable() assembles its multi-row INSERT inside
+# hlstats.pl, i.e. under "use bytes", and concatenating there flattens an
+# already-decoded value straight back to its raw bytes. Decoding in quote_sql()
+# alone is therefore undone one line later -- measured: a value decoded by
+# quote_sql and then joined under "use bytes" still arrives double-encoded.
+# By the time the finished query reaches these helpers the assembly is over,
+# the string holds correct UTF-8 bytes and only lacks the flag. Decoding it
+# here is what survives.
+sub _decode_sql {
+    utf8::decode($_[0]) if defined $_[0] && !utf8::is_utf8($_[0]);
+}
+
 sub query_now {
     my ($sql, @bind) = @_;
     DB_connect();
+    _decode_sql($sql);
     _decode_bind(@bind);
 
     my $sth = $dbh->prepare($sql);
@@ -168,6 +180,7 @@ sub query_now {
 sub exec_now {
     my ($sql, @bind) = @_;
     DB_connect();
+    _decode_sql($sql);
     _decode_bind(@bind);
     $dbh->do($sql, undef, @bind);
 }
@@ -176,6 +189,7 @@ sub exec_now {
 sub exec_cache {
     my ($query_id, $sql, @bind) = @_;
     DB_connect();
+    _decode_sql($sql);
     _decode_bind(@bind);
 
     unless ($stmt_cache{$query_id}) {
