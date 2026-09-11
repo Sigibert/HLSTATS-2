@@ -1025,6 +1025,19 @@ sub doEvent_Frag
     } elsif ($killer && $victim) {
         if (($g_servers{$s_addr}->{ignore_bots} == 1) && (($killer->{is_bot} == 1) || ($victim->{is_bot} == 1))) {
             $desc = "(IGNORED) BOT: ";
+
+            # Not scored, not recorded -- but the live page should still show
+            # what the scoreboard shows. The map_* counters feed exactly one
+            # consumer, hlstats_Livestats (the built-in team balancer also reads
+            # them, but AutoTeamBalance is off here), and they never reach
+            # hlstats_Players: flushDB writes the session deltas kills/deaths,
+            # which stay untouched. So this is live display only, for the bot
+            # and for the human on the other end of the kill alike.
+            $killer->increment("map_kills");
+            $killer->increment("map_headshots") if ($headshot == 1);
+            $victim->increment("map_deaths");
+            $killer->updateDB();
+            $victim->updateDB();
         } else {
             # weapon fixes
             if ($weapon eq "") {
