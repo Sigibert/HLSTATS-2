@@ -258,6 +258,25 @@ sub check_history
 
 
 #
+# Key for this player's row in hlstats_Livestats.
+#
+# Humans use their playerId. Bots under IgnoreBots have none (see setUniqueId),
+# but they must still show on the live page, and hlstats_Livestats has
+# player_id as its primary key -- with a shared 0 only one bot could exist and
+# any bot's disconnect would wipe it. So a bot gets a stable NEGATIVE key
+# derived from its BOT:<md5> identity: negative because auto-increment never
+# produces one, so it can never collide with a real player, and anyone reading
+# the table sees at once that it is not one. The +1 keeps it non-zero.
+#
+sub livestatsKey
+{
+    my ($self) = @_;
+    return $self->{playerid} if $self->{playerid};
+    my ($hex) = ($self->{uniqueid} // '') =~ /^BOT:([0-9a-f]{7})/;
+    return $hex ? -(hex($hex) + 1) : 0;
+}
+
+#
 # Set player's uniqueid
 #
 sub setUniqueId
@@ -413,7 +432,7 @@ sub insertPlayerLivestats
             ?,?,?,?,?,?,?,?,?,?
         )
     ";
-    my @vals = ($self->{playerid}, $self->{server_id}, $self->{address}, $self->{plain_uniqueid},
+    my @vals = ($self->livestatsKey, $self->{server_id}, $self->{address}, $self->{plain_uniqueid},
                 $self->{name}, $self->{team}, $self->{ping}, $self->{connect_time}, $self->{skill}, $self->{flag});
     ::exec_cache("player_livestats_insert", $query, @vals);
     ::printEvent("MYSQL", "Insert Player in Live Stats $self->{name} ($self->{playerid})",4);
@@ -474,15 +493,69 @@ sub setName
 
 
 #
+# Push the current in-memory state to hlstats_Livestats (the live page).
+# Split out of flushDB so bots without a database identity can keep their
+# live row current without touching hlstats_Players. Keyed by livestatsKey.
+#
+sub flushLivestats
+{
+    my ($self) = @_;
+
+    my $is_stdin = $::g_stdin ? 1 : 0;
+    my $srv      = $self->{server};
+    return unless !$is_stdin
+        && ($self->{userid} > 0 || $::g_servers{$srv}->{play_game} == CS2());
+
+    my $key = $self->livestatsKey or return;
+
+    my $name = is_utf8($self->{name}) ? $self->{name} : decode('UTF-8', $self->{name}, Encode::FB_DEFAULT);
+    $name =~ s/[\x00-\x1f\x7f]//g;
+    $name = substr($name, 0, 64);
+    my $skill   = $self->{skill} // 0; $skill = 0 if $skill < 0;
+    my $address = $self->{address} ? $self->{address} : ($self->{is_bot} ? '' : '127.0.0.1');
+
+    my $query = q{
+        UPDATE hlstats_Livestats
+           SET cli_address  = ?,
+               steam_id     = ?,
+               name         = ?,
+               team         = ?,
+               kills        = ?,
+               deaths       = ?,
+               suicides     = ?,
+               headshots    = ?,
+               shots        = ?,
+               hits         = ?,
+               is_dead      = ?,
+               has_bomb     = ?,
+               ping         = ?,
+               connected    = ?,
+               skill_change = ?,
+               skill        = ?
+         WHERE player_id = ?
+    };
+    ::exec_cache("player_flushdb_livestats", $query,
+        $address, $self->{plain_uniqueid}, $name,
+        $self->{team}, $self->{map_kills}, $self->{map_deaths}, $self->{map_suicides},
+        $self->{map_headshots}, $self->{map_shots}, $self->{map_hits},
+        $self->{is_dead}, $self->{has_bomb}, $self->{ping}, $self->{connect_time},
+        $self->{session_skill}, $skill, $key);
+}
+
+#
 # Update player information in database
 #
 sub flushDB {
     my ($self, $leaveLastUse, $callref) = @_;
 
     my $playerid = $self->{playerid} or do {
-        # Expected for bots under IgnoreBots (see setUniqueId); only worth a
-        # warning for a human, where it means the insert failed.
-        warn "Player->Update() with no playerid set!\n" unless $self->{is_bot};
+        if ($self->{is_bot}) {
+            # Bot under IgnoreBots: no database identity (see setUniqueId), but
+            # the live page still needs its current team, ping and state.
+            $self->flushLivestats();
+            return 0;
+        }
+        warn "Player->Update() with no playerid set!\n";
         return 0;
     };
 
@@ -653,32 +726,7 @@ sub flushDB {
     }
 
     # --- Live stats (game server mode only) ---
-    if (!$is_stdin && ($self->{userid} > 0 || $::g_servers{$server_address}->{play_game} == CS2())) {
-        my $query = q{
-            UPDATE hlstats_Livestats
-               SET cli_address  = ?,
-                   steam_id     = ?,
-                   name         = ?,
-                   team         = ?,
-                   kills        = ?,
-                   deaths       = ?,
-                   suicides     = ?,
-                   headshots    = ?,
-                   shots        = ?,
-                   hits         = ?,
-                   is_dead      = ?,
-                   has_bomb     = ?,
-                   ping         = ?,
-                   connected    = ?,
-                   skill_change = ?,
-                   skill        = ?
-             WHERE player_id = ?
-        };
-        ::exec_cache("player_flushdb_livestats", $query,
-            $address, $steamid, $name,
-			$team, $map_kills, $map_deaths, $map_suicides, $map_headshots, $map_shots,
-			$map_hits, $is_dead, $has_bomb, $ping, $connected, $skill_change, $skill, $playerid);
-    }
+    $self->flushLivestats();
 
     # --- Reset in-memory counters & timestamps ---
     for my $k (qw/kills deaths suicides headshots shots hits teamkills/) {
@@ -717,7 +765,7 @@ sub deleteLivestats
     my ($self) = @_;
 
     # delete live stats
-    ::exec_now("DELETE FROM hlstats_Livestats WHERE player_id=?", $self->{playerid});
+    ::exec_now("DELETE FROM hlstats_Livestats WHERE player_id=?", $self->livestatsKey);
 
 }
 
