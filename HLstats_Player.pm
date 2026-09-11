@@ -123,6 +123,13 @@ sub new
         $self->set($k, $v);
     }
 
+    # The identity already says whether this is a bot: hlstats.pl only ever
+    # builds a "BOT:<md5>" uniqueid after botidcheck() succeeded. Make the flag
+    # follow the identity here, once, so no object can carry a BOT: id with
+    # is_bot 0 -- which is the state that let bot kills through the IgnoreBots
+    # branch (measured: 6-81 scored bot frags a day, in bursts). The trigger
+    # for those bursts was never pinned down; this makes it irrelevant.
+    $self->{is_bot} = 1 if $params{uniqueid} =~ /^BOT:/;
 
     $self->updateTrackable();
     $self->{plain_uniqueid} = $params{plain_uniqueid};
@@ -256,6 +263,23 @@ sub check_history
 sub setUniqueId
 {
     my ($self, $uniqueid) = @_;
+
+    # Bots under IgnoreBots never get a database identity. Every writer in this
+    # module -- flushDB, setName, geoUpdate, check_history -- already keys on a
+    # truthy playerid, so leaving it at 0 keeps the bot entirely in memory: no
+    # hlstats_Players row, no PlayerUniqueIds mapping, no PlayerNames, no daily
+    # Players_History rows. Before this, IgnoreBots only hid bots (hideranking)
+    # while still accumulating 1443 bot players, 202k hours of connection_time
+    # and 92 % of Players_History (no unique index, one new row per map change).
+    # The event handlers need nothing from the database for a bot; they skip
+    # bot events on is_bot alone. Livestats is left alone on purpose: it is
+    # transient and keeps bots visible on the live page.
+    if ($self->{is_bot} && ($::g_servers{$self->{server}}->{ignore_bots} // 0)) {
+        $self->{playerid} = 0;
+        $self->{uniqueid} = $uniqueid;
+        return;
+    }
+
     my $pid = ::getPlayerId($uniqueid);
 
     my $game = $::g_servers{$self->{server}}->{game};
@@ -278,7 +302,16 @@ sub setUniqueId
 
         # This is a new player. Create a new record for them in the Players
         $self->insertPlayer();
-        ::exec_now(q{INSERT IGNORE INTO hlstats_PlayerUniqueIds (playerId, uniqueId, game) VALUES (?, ?, ?)}, $self->{playerid}, $uniqueid, $game);
+
+        # Only bind the SteamID once we actually have a player. If the insert
+        # failed, playerid is 0, and writing the mapping anyway is exactly how
+        # the 81 corpses in PlayerUniqueIds came about: the SteamID gets bound
+        # to nobody, and the (uniqueId, game) primary key keeps it that way.
+        if ($self->{playerid}) {
+            ::exec_now(q{INSERT IGNORE INTO hlstats_PlayerUniqueIds (playerId, uniqueId, game) VALUES (?, ?, ?)}, $self->{playerid}, $uniqueid, $game);
+        } else {
+            ::printEvent("MYSQL", "Not binding '$uniqueid' -- player insert failed, will retry on next event", 1);
+        }
 
     }
 
@@ -345,6 +378,13 @@ sub insertPlayer
     my $res = ::exec_cache("player_insert", $query, @vals);
     $self->{playerid} = $::dbh->last_insert_id(undef, undef, undef, undef);
 
+    # exec_cache returns undef on failure (RaiseError is off) and last_insert_id
+    # then yields 0. Make that explicit and loud instead of letting a 0 travel
+    # on as if it were an id -- see setUniqueId for what it did to 81 SteamIDs.
+    unless ($res && $self->{playerid}) {
+        $self->{playerid} = 0;
+        ::printEvent("MYSQL", "insertPlayer failed for '" . ($self->{name} // '') . "' -- no player id assigned", 1);
+    }
 }
 
 #
@@ -426,7 +466,7 @@ sub setName
         ::exec_now($sql_n, $pid, $self->{name}, $::ev_unixtime);
          $rows->finish;
          ::printEvent("MYSQL", "HLstats_Player->setName() to DB",4);
-    } else {
+    } elsif (!$is_bot) {
         ::printEvent("HLSTATSZ", "HLstats_Player->setName(): No playerid",1);
     }
 }
@@ -440,7 +480,9 @@ sub flushDB {
     my ($self, $leaveLastUse, $callref) = @_;
 
     my $playerid = $self->{playerid} or do {
-        warn "Player->Update() with no playerid set!\n";
+        # Expected for bots under IgnoreBots (see setUniqueId); only worth a
+        # warning for a human, where it means the insert failed.
+        warn "Player->Update() with no playerid set!\n" unless $self->{is_bot};
         return 0;
     };
 
