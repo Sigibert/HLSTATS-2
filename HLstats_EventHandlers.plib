@@ -1020,6 +1020,17 @@ sub doEvent_Frag
 
     if (($g_servers{$s_addr}->{num_trackable_players} < $g_servers{$s_addr}->{minplayers})) {
         $desc = "(IGNORED) NOTMINPLAYERS: ";
+        # Same rule as the bot branch below: not scored, but the live page
+        # mirrors the scoreboard. MinPlayers counts humans only, so a server
+        # running mostly bots sits below it almost all the time -- without this
+        # the live page there would never move. Display counters only.
+        if ($killer && $victim) {
+            $killer->increment("map_kills");
+            $killer->increment("map_headshots") if ($headshot == 1);
+            $victim->increment("map_deaths");
+            $killer->updateDB();
+            $victim->updateDB();
+        }
     } elsif (checkBonusRound()) {
         $desc = "(IGNORED) BonusRound: ";
     } elsif ($killer && $victim) {
