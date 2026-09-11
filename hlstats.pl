@@ -534,6 +534,22 @@ sub getPlayerId
     if ( $row->rows > 0 ) {
        $pid =$row->fetchrow_array;
        $row->finish;
+
+       # A mapping to playerId 0 is a corpse: it is written when insertPlayer()
+       # fails silently and last_insert_id() returns 0. Because the primary key
+       # is (uniqueId, game), the row then blocks this SteamID forever -- every
+       # later connect looks like a new player, gets a fresh hlstats_Players row
+       # and never a mapping. Found 81 such rows and 386 orphaned players on
+       # 2026-09-11. Remove the corpse here so the caller's "new player" path
+       # can create a proper record and mapping.
+       if (!$pid) {
+           exec_now(
+               'DELETE FROM hlstats_PlayerUniqueIds WHERE uniqueId = ? AND game = ? AND playerId = 0',
+               $uniqueId, $g_servers{$s_addr}->{game}
+           );
+           printEvent("MYSQL", "Removed broken uniqueId mapping to playerId 0 for '$uniqueId' -- will be recreated", 1);
+           $pid = 0;
+       }
     }
     return $pid;
 }
