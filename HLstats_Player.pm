@@ -508,7 +508,7 @@ sub flushLivestats
 
     my $key = $self->livestatsKey or return;
 
-    my $name = is_utf8($self->{name}) ? $self->{name} : decode('UTF-8', $self->{name}, Encode::FB_DEFAULT);
+    my $name = ::utf8_text($self->{name});
     $name =~ s/[\x00-\x1f\x7f]//g;
     $name = substr($name, 0, 64);
     my $skill   = $self->{skill} // 0; $skill = 0 if $skill < 0;
